@@ -47,6 +47,7 @@ ENTRY_PARSERS = [
 
 def main() -> None:
     logger.init()
+
     version = importlib.metadata.version("dploot")
     parser = argparse.ArgumentParser(description=f"DPAPI looting remotely in Python.\nVersion {version}", add_help=True)
 
@@ -76,6 +77,7 @@ def main() -> None:
         logging.getLogger().setLevel(logging.INFO)
 
     try:
+        logging.debug(f"Options:{options}")
         actions[options.action](options)
     except Exception as e:
         logging.error("Got error: %s" % e)

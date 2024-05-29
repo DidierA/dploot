@@ -36,7 +36,7 @@ class MachineCertificatesAction:
 
     def connect(self) -> None:
         self.conn = DPLootSMBConnection(self.target)
-        if self.conn.connect() is None:
+        if self.conn.connect() is None and not self.conn.local_session:
             logging.error("Could not connect to %s" % self.target.address)
             sys.exit(1)
     
@@ -45,7 +45,7 @@ class MachineCertificatesAction:
         logging.info("Connected to %s as %s\\%s %s\n" % (self.target.address, self.target.domain, self.target.username, ( "(admin)"if self.is_admin  else "")))
         if self.is_admin:
             if self.masterkeys is None:
-                triage = MasterkeysTriage(target=self.target, conn=self.conn)
+                triage = MasterkeysTriage(target=self.target, conn=self.conn, options=self.options)
                 logging.info("Triage SYSTEM masterkeys\n")
                 self.masterkeys = triage.triage_system_masterkeys()
                 if not self.options.quiet: 
@@ -96,6 +96,34 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> Tuple[str, Callable
         action="store",
         help=(
             "File containing {GUID}:SHA1 masterkeys mappings"
+        ),
+    )
+
+    group.add_argument(
+        "-system",
+        action="store",
+        dest='systemhive',
+        help=(
+            "File containing system hive (for local operations)"
+        ),
+    )
+
+    group.add_argument(
+        "-security",
+        action="store",
+        dest='securityhive',
+        help=(
+            "File containing security hive (for local operations)"
+        ),
+    )
+
+    group.add_argument(
+        "-root",
+        action="store",
+        dest='localroot',
+        default='.',
+        help=(
+            "Root directory (for local operations)"
         ),
     )
 

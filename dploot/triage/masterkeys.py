@@ -1,6 +1,8 @@
 from binascii import hexlify, unhexlify
+import argparse
 import logging
 import ntpath
+import os
 from typing import Dict, List
 from Cryptodome.Hash import SHA1
 
@@ -41,13 +43,14 @@ class MasterkeysTriage:
     system_masterkeys_generic_path = 'Windows\\System32\\Microsoft\\Protect'
     share = 'C$'
 
-    def __init__(self, target: Target, conn: DPLootSMBConnection, pvkbytes: bytes = None, passwords: Dict[str,str] = None, nthashes: Dict[str,str] = None, dpapiSystem: Dict[str,str] = None) -> None:
+    def __init__(self, target: Target, conn: DPLootSMBConnection, pvkbytes: bytes = None, passwords: Dict[str,str] = None, nthashes: Dict[str,str] = None, dpapiSystem: Dict[str,str] = None, options:argparse.Namespace = None) -> None:
         self.target = target
         self.conn = conn
         self.pvkbytes = pvkbytes
         self.passwords = passwords
         self.nthashes = nthashes
-        
+        self.options = options 
+
         self._users = None
         self.looted_files = dict()
         self.dpapiSystem = dpapiSystem
@@ -59,7 +62,10 @@ class MasterkeysTriage:
         masterkeys = list()
         logging.getLogger("impacket").disabled = True
         if len(self.dpapiSystem) == 0:
-            self.conn.enable_remoteops()
+            if self.conn.local_session:
+                self.conn.enable_localops(self.options.systemhive)
+            else:
+                self.conn.enable_remoteops()
             if self.conn.remote_ops and self.conn.bootkey:
 
                 SECURITYFileName = self.conn.remote_ops.saveSECURITY()
@@ -67,39 +73,87 @@ class MasterkeysTriage:
                                 perSecretCallback=self.getDPAPI_SYSTEM)
                 LSA.dumpSecrets()
                 LSA.finish()
-        system_protect_dir = self.conn.remote_list_dir(self.share, path=self.system_masterkeys_generic_path)
-        for d in system_protect_dir:
-            if d not in self.false_positive and d.is_directory()>0 and d.get_longname()[:2] == 'S-':# could be a better way to deal with sid
-                sid = d.get_longname()
-                system_protect_dir_sid_path = ntpath.join(self.system_masterkeys_generic_path,sid)
-                system_sid_dir = self.conn.remote_list_dir(self.share, path=system_protect_dir_sid_path)
-                for f in system_sid_dir:
-                    if f.is_directory() == 0 and is_guid(f.get_longname()):
-                        guid = f.get_longname()
-                        filepath = ntpath.join(system_protect_dir_sid_path,guid)
-                        logging.debug("Found SYSTEM system MasterKey: \\\\%s\\%s\\%s" %  (self.target.address,self.share,filepath))
-                        # read masterkey
-                        masterkey_bytes = self.conn.readFile(self.share, filepath)
-                        if masterkey_bytes is not None:
-                            self.looted_files[guid] = masterkey_bytes
-                            key = decrypt_masterkey(masterkey=masterkey_bytes, dpapi_systemkey=self.dpapiSystem)
-                            if key is not None:
-                                masterkeys.append(Masterkey(guid=guid, sha1=hexlify(SHA1.new(key).digest()).decode('latin-1'), user='SYSTEM'))
-                    elif f.is_directory()>0 and f.get_longname() == 'User':
-                        system_protect_dir_user_path = ntpath.join(system_protect_dir_sid_path,'User')
-                        system_user_dir = self.conn.remote_list_dir(self.share, path=system_protect_dir_user_path)
-                        for g in system_user_dir:
-                            if g.is_directory() == 0 and is_guid(g.get_longname()):
-                                guid = g.get_longname()
-                                filepath = ntpath.join(system_protect_dir_user_path,guid)
-                                logging.debug("Found SYSTEM user MasterKey: \\\\%s\\%s\\%s" %  (self.target.address,self.share,filepath))
-                                # read masterkey
-                                masterkey_bytes = self.conn.readFile(self.share, filepath)
-                                if masterkey_bytes is not None:
-                                    self.looted_files[guid] = masterkey_bytes
-                                    key = decrypt_masterkey(masterkey=masterkey_bytes, dpapi_systemkey=self.dpapiSystem, sid=sid)
-                                    if key is not None:
-                                        masterkeys.append(Masterkey(guid=guid, sha1=hexlify(SHA1.new(key).digest()).decode('latin-1'), user='SYSTEM_User'))
+            if self.conn.local_ops and self.conn.bootkey:
+                logging.debug(f"Boot Key: {hexlify(self.conn.bootkey)}")
+                SECURITYFileName = self.options.securityhive
+                LSA = LSASecrets(SECURITYFileName, self.conn.bootkey, self.conn.remote_ops, isRemote=False,
+                                perSecretCallback=self.getDPAPI_SYSTEM)
+                LSA.dumpSecrets()
+                LSA.finish()
+        if self.conn.local_session:
+            parse_user_dir = False 
+            for root, dirs, files in os.walk(os.path.join(self.options.localroot, self.system_masterkeys_generic_path.replace('\\', os.sep))):
+                path = root.split(os.sep)
+                root_basename = os.path.basename(root)
+                if root_basename not in self.false_positive and root_basename[:2] == 'S-':
+                    sid=root_basename 
+                    system_protect_dir_sid_path=root 
+                    for file in files:
+                        if is_guid(file):
+                            guid=file
+                            filepath=os.path.join(root,guid)
+                            logging.debug("Found SYSTEM system MasterKey: %s" %  filepath)
+                            # read masterkey
+                            with open(filepath, 'rb') as masterkey_file:
+                                masterkey_bytes = masterkey_file.read()
+                            if masterkey_bytes is not None:
+                                self.looted_files[guid] = masterkey_bytes
+                                key = decrypt_masterkey(masterkey=masterkey_bytes, dpapi_systemkey=self.dpapiSystem)
+                                if key is not None:
+                                    masterkeys.append(Masterkey(guid=guid, sha1=hexlify(SHA1.new(key).digest()).decode('latin-1'), user='SYSTEM'))
+                    for dir in dirs:
+                        if dir == 'User':
+                            parse_user_dir = True
+                if root_basename == 'User' and parse_user_dir:
+                    parse_user_dir = False
+                    for file in files:
+                        if is_guid(file):
+                            guid=file
+                            filepath=os.path.join(root,guid)
+                            logging.debug("Found SYSTEM user MasterKey: %s" % filepath)
+                            # read masterkey
+                            with open(filepath, 'rb') as masterkey_file:
+                                masterkey_bytes = masterkey_file.read()
+                            if masterkey_bytes is not None:
+                                self.looted_files[guid] = masterkey_bytes
+                                key = decrypt_masterkey(masterkey=masterkey_bytes, dpapi_systemkey=self.dpapiSystem, sid=sid)
+                                if key is not None:
+                                    masterkeys.append(Masterkey(guid=guid, sha1=hexlify(SHA1.new(key).digest()).decode('latin-1'), user='SYSTEM_User'))
+
+        else:
+            system_protect_dir = self.conn.remote_list_dir(self.share, path=self.system_masterkeys_generic_path)
+            for d in system_protect_dir:
+                if d not in self.false_positive and d.is_directory()>0 and d.get_longname()[:2] == 'S-':# could be a better way to deal with sid
+                    sid = d.get_longname()
+                    system_protect_dir_sid_path = ntpath.join(self.system_masterkeys_generic_path,sid)
+                    system_sid_dir = self.conn.remote_list_dir(self.share, path=system_protect_dir_sid_path)
+                    for f in system_sid_dir:
+                        if f.is_directory() == 0 and is_guid(f.get_longname()):
+                            guid = f.get_longname()
+                            filepath = ntpath.join(system_protect_dir_sid_path,guid)
+                            logging.debug("Found SYSTEM system MasterKey: \\\\%s\\%s\\%s" %  (self.target.address,self.share,filepath))
+                            # read masterkey
+                            masterkey_bytes = self.conn.readFile(self.share, filepath)
+                            if masterkey_bytes is not None:
+                                self.looted_files[guid] = masterkey_bytes
+                                key = decrypt_masterkey(masterkey=masterkey_bytes, dpapi_systemkey=self.dpapiSystem)
+                                if key is not None:
+                                    masterkeys.append(Masterkey(guid=guid, sha1=hexlify(SHA1.new(key).digest()).decode('latin-1'), user='SYSTEM'))
+                        elif f.is_directory()>0 and f.get_longname() == 'User':
+                            system_protect_dir_user_path = ntpath.join(system_protect_dir_sid_path,'User')
+                            system_user_dir = self.conn.remote_list_dir(self.share, path=system_protect_dir_user_path)
+                            for g in system_user_dir:
+                                if g.is_directory() == 0 and is_guid(g.get_longname()):
+                                    guid = g.get_longname()
+                                    filepath = ntpath.join(system_protect_dir_user_path,guid)
+                                    logging.debug("Found SYSTEM user MasterKey: \\\\%s\\%s\\%s" %  (self.target.address,self.share,filepath))
+                                    # read masterkey
+                                    masterkey_bytes = self.conn.readFile(self.share, filepath)
+                                    if masterkey_bytes is not None:
+                                        self.looted_files[guid] = masterkey_bytes
+                                        key = decrypt_masterkey(masterkey=masterkey_bytes, dpapi_systemkey=self.dpapiSystem, sid=sid)
+                                        if key is not None:
+                                            masterkeys.append(Masterkey(guid=guid, sha1=hexlify(SHA1.new(key).digest()).decode('latin-1'), user='SYSTEM_User'))
         return masterkeys
 
     def triage_masterkeys(self) -> List[Masterkey]:

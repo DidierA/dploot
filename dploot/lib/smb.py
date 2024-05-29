@@ -9,7 +9,7 @@ from dploot.lib.target import Target
 from impacket.smbconnection import SMBConnection
 from impacket.smb import SMB_DIALECT
 from impacket.nmb import NetBIOSTimeout
-from impacket.examples.secretsdump import RemoteOperations
+from impacket.examples.secretsdump import RemoteOperations,LocalOperations
 from impacket.smb3structs import FILE_READ_DATA, FILE_OPEN, FILE_NON_DIRECTORY_FILE, FILE_SHARE_READ
 
 from dploot.lib.wmi import DPLootWmiExec
@@ -19,6 +19,8 @@ class DPLootSMBConnection:
         self.target = target
 
         self.smb_session = None
+        self.local_session = False # will be set to true for local operations (when target = LOCAL)
+        self.local_ops = None 
         self.remote_ops = None
         self.smbv1 = False
 
@@ -50,7 +52,13 @@ class DPLootSMBConnection:
 
         return True
 
+    def create_local_conn(self):
+        self.local_session = True
+        return True 
+
     def create_conn_obj(self, kdc=''):
+        if self.target.address.upper() == "LOCAL" and self.create_local_conn():
+            return True
         if self.create_smbv3_conn(kdc):
             return True
         elif self.create_smbv1_conn(kdc):
@@ -92,14 +100,15 @@ class DPLootSMBConnection:
                 logging.debug("Connecting to %s" % self.target.address)
                 if not self.create_conn_obj():
                     return None
-                logging.debug("Authenticating with %s through NTLM" % self.target.username)
-                self.smb_session.login(
-                    user=self.target.username,
-                    password=self.target.password,
-                    domain=self.target.domain,
-                    lmhash=self.target.lmhash,
-                    nthash=self.target.nthash
-                    )
+                if not self.local_session:
+                    logging.debug("Authenticating with %s through NTLM" % self.target.username)
+                    self.smb_session.login(
+                        user=self.target.username,
+                        password=self.target.password,
+                        domain=self.target.domain,
+                        lmhash=self.target.lmhash,
+                        nthash=self.target.nthash
+                        )
         except Exception as e:
             if logging.getLogger().level == logging.DEBUG:
                 import traceback
@@ -117,6 +126,10 @@ class DPLootSMBConnection:
             return None
 
     def is_admin(self) -> bool:
+        if self.local_session:
+            is_admin = True
+            return is_admin
+    
         try:
             self.smb_session.connectTree('C$')
             is_admin = True
@@ -132,6 +145,11 @@ class DPLootSMBConnection:
         self.smb_session.reconnect()
         if self.remote_ops is not None:
             self.enable_remoteops(force=True)
+
+    def enable_localops(self, systemHive) -> None:
+        self.local_ops = LocalOperations(systemHive) # from options
+        self.bootkey  = self.local_ops.getBootKey()
+        return 
 
     def enable_remoteops(self, force=False) -> None:
         logging.getLogger("impacket").disabled = True
