@@ -146,10 +146,14 @@ class DPLootSMBConnection:
         if self.remote_ops is not None:
             self.enable_remoteops(force=True)
 
-    def enable_localops(self, systemHive) -> None:
-        self.local_ops = LocalOperations(systemHive) # from options
-        self.bootkey  = self.local_ops.getBootKey()
-        return 
+    def enable_localops(self, systemHive, force=False) -> None:
+        if self.local_ops is not None and self.bootkey is not None and not force:
+            return
+        try:
+            self.local_ops = LocalOperations(systemHive)
+            self.bootkey  = self.local_ops.getBootKey()
+        except Exception as e:
+            self.logger.error(f'LocalOperations failed: {e}') 
 
     def enable_remoteops(self, force=False) -> None:
         logging.getLogger("impacket").disabled = True

@@ -33,6 +33,7 @@ class Target:
             and options.hashes is None
             and options.aesKey is None
             and options.no_pass is not True
+            and options.target != "LOCAL"
         ):
             from getpass import getpass
 
@@ -93,6 +94,7 @@ class Target:
             and aesKey is None
             and no_pass is not True
             and do_kerberos is not True
+            and options.target != "LOCAL"
         ):
             from getpass import getpass
 
