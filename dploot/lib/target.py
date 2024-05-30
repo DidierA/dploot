@@ -14,6 +14,7 @@ class Target:
         self.use_kcache: bool = False
         self.dc_ip: str = None
         self.aesKey: str = None
+        self.local_root: str = None
 
     @staticmethod
     def from_options(options) -> "Target":
@@ -64,6 +65,7 @@ class Target:
         self.use_kcache = options.use_kcache
         self.dc_ip = options.dc_ip
         self.aesKey = options.aesKey
+        self.local_root = options.localroot
 
         return self
 
@@ -80,7 +82,8 @@ class Target:
         use_kcache: bool = False,
         no_pass: bool = False,
         dc_ip: str = None,
-        aesKey: str = None) -> "Target":
+        aesKey: str = None,
+        local_root: str = None) -> "Target":
 
         self = Target()
 
@@ -124,6 +127,7 @@ class Target:
         self.use_kcache = use_kcache
         self.dc_ip = dc_ip
         self.aesKey = aesKey
+        self.local_root = local_root
         return self
 
     def __repr__(self) -> str:
@@ -197,3 +201,13 @@ def add_target_argument_group(parser: argparse.ArgumentParser,) -> None:
             "part (FQDN) specified in the target parameter"
         ),
     )
+    group.add_argument(
+        "-root",
+        action="store",
+        dest='localroot',
+        default='.',
+        help=(
+            "Root directory (for local operations)"
+        ),
+    )
+

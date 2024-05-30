@@ -43,13 +43,12 @@ class MasterkeysTriage:
     system_masterkeys_generic_path = 'Windows\\System32\\Microsoft\\Protect'
     share = 'C$'
 
-    def __init__(self, target: Target, conn: DPLootSMBConnection, pvkbytes: bytes = None, passwords: Dict[str,str] = None, nthashes: Dict[str,str] = None, dpapiSystem: Dict[str,str] = None, options:argparse.Namespace = None) -> None:
+    def __init__(self, target: Target, conn: DPLootSMBConnection, pvkbytes: bytes = None, passwords: Dict[str,str] = None, nthashes: Dict[str,str] = None, dpapiSystem: Dict[str,str] = None) -> None:
         self.target = target
         self.conn = conn
         self.pvkbytes = pvkbytes
         self.passwords = passwords
         self.nthashes = nthashes
-        self.options = options 
 
         self._users = None
         self.looted_files = dict()
@@ -84,7 +83,7 @@ class MasterkeysTriage:
         logging.getLogger("impacket").disabled = True
         if len(self.dpapiSystem) == 0:
             if self.conn.local_session:
-                self.conn.enable_localops(os.path.join(self.options.localroot, r'Windows/System32/config/SYSTEM'))
+                self.conn.enable_localops(os.path.join(self.target.local_root, r'Windows/System32/config/SYSTEM'))
             else:
                 self.conn.enable_remoteops()
             if self.conn.remote_ops and self.conn.bootkey:
@@ -96,7 +95,7 @@ class MasterkeysTriage:
                 LSA.finish()
             if self.conn.local_ops and self.conn.bootkey:
                 logging.debug(f"Boot Key: {hexlify(self.conn.bootkey)}")
-                SECURITYFileName = os.path.join(self.options.localroot, r'Windows/System32/config/SECURITY')
+                SECURITYFileName = os.path.join(self.target.local_root, r'Windows/System32/config/SECURITY')
                 LSA = LSASecrets(SECURITYFileName, self.conn.bootkey, self.conn.remote_ops, isRemote=False,
                                 perSecretCallback=self.getDPAPI_SYSTEM)
                 LSA.dumpSecrets()
@@ -105,7 +104,7 @@ class MasterkeysTriage:
         if self.conn.local_session:
             parse_user_dir = False
             local_system_masterkeys_generic_path=self.system_masterkeys_generic_path.replace('\\', os.sep)
-            for root, dirs, files in os.walk(os.path.join(self.options.localroot, local_system_masterkeys_generic_path)):
+            for root, dirs, files in os.walk(os.path.join(self.target.local_root, local_system_masterkeys_generic_path)):
                 path = root.split(os.sep)
                 root_basename = os.path.basename(root)
                 if root_basename not in self.false_positive and root_basename[:2] == 'S-' :

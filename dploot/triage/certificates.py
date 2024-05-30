@@ -77,19 +77,18 @@ class CertificatesTriage:
     ]
     share = 'C$'
 
-    def __init__(self, target: Target, conn: DPLootSMBConnection, masterkeys: List[Masterkey], options:argparse.Namespace = None) -> None:
+    def __init__(self, target: Target, conn: DPLootSMBConnection, masterkeys: List[Masterkey]) -> None:
         self.target = target
         self.conn = conn
         
         self._users = None
         self.looted_files = dict()
         self.masterkeys = masterkeys
-        self.options = options
 
     def triage_system_certificates(self) -> List[Certificate]:
         logging.getLogger("impacket").disabled = True
         if self.conn.local_session:
-            self.conn.enable_localops(os.path.join(self.options.localroot, r'Windows/System32/config/SYSTEM'))
+            self.conn.enable_localops(os.path.join(self.target.local_root, r'Windows/System32/config/SYSTEM'))
         else:
             self.conn.enable_remoteops()
         certificates = []
@@ -105,7 +104,7 @@ class CertificatesTriage:
         certificates = {}
         if self.conn.local_session :
             # open hive
-            reg_file_path = os.path.join(self.options.localroot, r'Windows/System32/config/SOFTWARE')
+            reg_file_path = os.path.join(self.target.local_root, r'Windows/System32/config/SOFTWARE')
             reg = Registry(reg_file_path, isRemote=False)
 
             # open key
@@ -194,7 +193,7 @@ class CertificatesTriage:
         pkeys_dirs = list()
         if self.conn.local_session:
             for privatekeys_path in privatekeys_paths:
-                local_privatekey_path = os.path.join(self.options.localroot, privatekeys_path.replace('\\', os.sep))
+                local_privatekey_path = os.path.join(self.target.local_root, privatekeys_path.replace('\\', os.sep))
                 for pkeys_dir in filter(lambda d: d.is_dir(follow_symlinks=False) and ( d.name[:2] == 'S-' or d.name == 'MachineKeys'), os.scandir(local_privatekey_path)):
                     sid = pkeys_dir.name
                     pkeys_sid_path = pkeys_dir.path

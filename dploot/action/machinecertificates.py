@@ -45,7 +45,7 @@ class MachineCertificatesAction:
         logging.info("Connected to %s as %s\\%s %s\n" % (self.target.address, self.target.domain, self.target.username, ( "(admin)"if self.is_admin  else "")))
         if self.is_admin:
             if self.masterkeys is None:
-                triage = MasterkeysTriage(target=self.target, conn=self.conn, options=self.options)
+                triage = MasterkeysTriage(target=self.target, conn=self.conn)
                 logging.info("Triage SYSTEM masterkeys\n")
                 self.masterkeys = triage.triage_system_masterkeys()
                 if not self.options.quiet: 
@@ -53,7 +53,7 @@ class MachineCertificatesAction:
                         masterkey.dump()
                     print()
                 
-            certificate_triage = CertificatesTriage(target=self.target, conn=self.conn, masterkeys=self.masterkeys, options=self.options)
+            certificate_triage = CertificatesTriage(target=self.target, conn=self.conn, masterkeys=self.masterkeys)
             logging.info('Triage SYSTEM Certificates\n')
             certificates = certificate_triage.triage_system_certificates()
             for certificate in certificates:
@@ -96,16 +96,6 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> Tuple[str, Callable
         action="store",
         help=(
             "File containing {GUID}:SHA1 masterkeys mappings"
-        ),
-    )
-
-    group.add_argument(
-        "-root",
-        action="store",
-        dest='localroot',
-        default='.',
-        help=(
-            "Root directory (for local operations)"
         ),
     )
 
