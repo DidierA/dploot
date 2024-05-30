@@ -53,7 +53,7 @@ class MachineCertificatesAction:
                         masterkey.dump()
                     print()
                 
-            certificate_triage = CertificatesTriage(target=self.target, conn=self.conn, masterkeys=self.masterkeys)
+            certificate_triage = CertificatesTriage(target=self.target, conn=self.conn, masterkeys=self.masterkeys, options=self.options)
             logging.info('Triage SYSTEM Certificates\n')
             certificates = certificate_triage.triage_system_certificates()
             for certificate in certificates:
@@ -96,24 +96,6 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> Tuple[str, Callable
         action="store",
         help=(
             "File containing {GUID}:SHA1 masterkeys mappings"
-        ),
-    )
-
-    group.add_argument(
-        "-system",
-        action="store",
-        dest='systemhive',
-        help=(
-            "File containing system hive (for local operations)"
-        ),
-    )
-
-    group.add_argument(
-        "-security",
-        action="store",
-        dest='securityhive',
-        help=(
-            "File containing security hive (for local operations)"
         ),
     )
 
