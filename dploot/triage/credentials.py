@@ -7,7 +7,6 @@ from impacket.dpapi import CREDENTIAL_BLOB
 
 
 from dploot.triage import Triage
-from dploot.lib.consts import FALSE_POSITIVES
 from dploot.lib.dpapi import decrypt_credential, find_masterkey_for_credential_blob
 from dploot.lib.smb import DPLootSMBConnection
 from dploot.lib.target import Target
@@ -54,7 +53,7 @@ class CredentialsTriage(Triage):
         conn: DPLootSMBConnection,
         masterkeys: List[Masterkey],
         per_credential_callback: Callable = None,
-        false_positive: List[str] = FALSE_POSITIVES,
+        false_positive: List[str] | None = None,
     ) -> None:
         super().__init__(
             target, 
@@ -131,21 +130,21 @@ class CredentialsTriage(Triage):
                                 credential = Credential(
                                     winuser=winuser,
                                     credblob=cred,
-                                    target=cred["Target"].decode("utf-16le"),
-                                    description=cred["Description"].decode("utf-16le"),
-                                    unknown=cred["Unknown"].decode("utf-16le"),
-                                    username=cred["Username"].decode("utf-16le"),
-                                    password=cred["Unknown3"].decode("utf-16le"),
+                                    target=cred["Target"].decode("utf-16le").rstrip("\0"),
+                                    description=cred["Description"].decode("utf-16le").rstrip("\0"),
+                                    unknown=cred["Unknown"].decode("utf-16le").rstrip("\0"),
+                                    username=cred["Username"].decode("utf-16le").rstrip("\0"),
+                                    password=cred["Unknown3"].decode("utf-16le").rstrip("\0"),
                                 )
                             except UnicodeDecodeError:
                                 credential = Credential(
                                     winuser=winuser,
                                     credblob=cred,
-                                    target=cred["Target"].decode("utf-16le"),
-                                    description=cred["Description"].decode("utf-16le"),
-                                    unknown=cred["Unknown"].decode("utf-16le"),
-                                    username=cred["Username"].decode("utf-16le"),
-                                    password=cred["Unknown3"].decode("latin-1"),
+                                    target=cred["Target"].decode("utf-16le").rstrip("\0"),
+                                    description=cred["Description"].decode("utf-16le").rstrip("\0"),
+                                    unknown=cred["Unknown"].decode("utf-16le").rstrip("\0"),
+                                    username=cred["Username"].decode("utf-16le").rstrip("\0"),
+                                    password=cred["Unknown3"].decode("latin-1").rstrip("\0"),
                                 )
                             credentials.append(credential)
                             if self.per_loot_callback is not None:
