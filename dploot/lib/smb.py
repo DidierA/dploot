@@ -361,6 +361,7 @@ class DPLootLocalSMBConnection(DPLootSMBConnection):
         self.local_ops = None
         self.local_session = True
         self.smb_session = DPLootDummySession()
+        self.bootkey = None
         # the following are functions that should never be called on this class.
         self.enable_remoteops = None
         self.reconnect = None
@@ -380,6 +381,9 @@ class DPLootLocalSMBConnection(DPLootSMBConnection):
             self.bootkey = self.local_ops.getBootKey()
         except Exception as e:
             logging.error(f"LocalOperations failed: {e}")
+            if logging.getLogger().level == logging.DEBUG:
+                import traceback
+                traceback.print_exc()
 
     # we 'emulate' remote file operations by converting local os.DirEntry() to impacket.SharedFile()
     def _sharedfile_fromdirentry(d: os.DirEntry):
