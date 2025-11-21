@@ -157,7 +157,8 @@ class MobaXtermTriage(Triage):
     ) -> Tuple[
         List[MobaXtermMasterPassword], List["MobaXtermCredential | MobaXtermPassword"]
     ]:
-        logging.getLogger("impacket").disabled = True
+        if logging.getLogger().level != logging.DEBUG:
+            logging.getLogger("impacket").disabled = True
         mobaxterm_credentials = []
         mobaxterm_masterpassword_key = []
         for user, sid in self.users.items():

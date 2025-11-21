@@ -5,6 +5,7 @@ import sys
 import traceback
 
 from impacket.examples import logger
+import impacket.version
 
 from dploot.action import (
     backupkey,
@@ -80,6 +81,8 @@ def main() -> None:
         logging.getLogger().setLevel(logging.INFO)
 
     logging.debug(f"{options=}")
+    logging.debug(impacket.version.BANNER.strip())
+    logging.debug(impacket.version.getInstallationPath())
     try:
         actions[options.action](options)
     except Exception as e:

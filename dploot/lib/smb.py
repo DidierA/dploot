@@ -215,7 +215,8 @@ class DPLootRemoteSMBConnection(DPLootSMBConnection):
             self.enable_remoteops(force=True)
 
     def enable_remoteops(self, force=False) -> None:
-        logging.getLogger("impacket").disabled = True
+        if logging.getLogger().level != logging.DEBUG:
+            logging.getLogger("impacket").disabled = True
         if self.remote_ops is not None and self.bootkey is not None and not force:
             return
         try:

@@ -109,7 +109,8 @@ class CertificatesTriage(Triage):
         self._users = None
 
     def triage_system_certificates(self) -> List[Certificate]:
-        logging.getLogger("impacket").disabled = True
+        if logging.getLogger().level != logging.DEBUG:
+            logging.getLogger("impacket").disabled = True
         if self.conn.local_session:
             self.conn.enable_localops(
                 os.path.join(self.target.local_root, r"Windows/System32/config/SYSTEM")

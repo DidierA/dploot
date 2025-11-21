@@ -62,7 +62,8 @@ class MasterkeysTriage(Triage):
 
     def triage_system_masterkeys(self) -> List[Masterkey]:
         masterkeys = []
-        logging.getLogger("impacket").disabled = True
+        if logging.getLogger().level != logging.DEBUG:
+            logging.getLogger("impacket").disabled = True
         if len(self.dpapiSystem) == 0:
             if self.conn.local_session:
                 self.conn.enable_localops(
